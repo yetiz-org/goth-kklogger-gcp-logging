@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"cloud.google.com/go/logging"
-	kklogger "github.com/kklab-com/goth-kklogger"
+	kklogger "github.com/yetiz-org/goth-kklogger"
 )
 
 type KKLoggerGCPLoggingHook struct {
