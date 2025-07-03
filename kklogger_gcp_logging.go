@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 
 	"cloud.google.com/go/logging"
@@ -107,8 +108,71 @@ func (h *KKLoggerGCPLoggingHook) Send(level kklogger.Level, msg string) {
 }
 
 func (h *KKLoggerGCPLoggingHook) getEntry(level kklogger.Level, msg string) logging.Entry {
-	obj := &map[string]interface{}{}
-	json.Unmarshal([]byte(msg), obj)
+	obj := map[string]interface{}{}
+	_ = json.Unmarshal([]byte(msg), &obj)
+	labels := map[string]string{
+		"logProject":  h.LogName,
+		"environment": h.Environment,
+		"codeVersion": h.CodeVersion,
+		"service":     h.Service,
+		"serverRoot":  h.ServerRoot,
+	}
+
+	if v, f := obj["type"]; f {
+		if typeStr, ok := v.(string); ok {
+			// Parse format: current_file_package_name:struct_name.method_name#section_name!action_tag
+			// Split by ':' to get package name
+			if colonIdx := strings.Index(typeStr, ":"); colonIdx != -1 {
+				labels["log_package"] = typeStr[:colonIdx]
+				remaining := typeStr[colonIdx+1:]
+
+				// Split by '#' to separate method from section/action
+				if hashIdx := strings.Index(remaining, "#"); hashIdx != -1 {
+					classMethod := remaining[:hashIdx]
+					sectionAction := remaining[hashIdx+1:]
+
+					// Split struct_name.method_name
+					if dotIdx := strings.Index(classMethod, "."); dotIdx != -1 {
+						labels["log_class"] = classMethod[:dotIdx]
+						labels["log_method"] = classMethod[dotIdx+1:]
+					} else {
+						labels["log_method"] = classMethod
+					}
+
+					// Split by '!' to separate section from action
+					if exclamIdx := strings.Index(sectionAction, "!"); exclamIdx != -1 {
+						labels["log_section"] = sectionAction[:exclamIdx]
+						labels["log_action"] = sectionAction[exclamIdx+1:]
+					} else {
+						labels["log_section"] = sectionAction
+					}
+				} else {
+					// No section/action part, check if there's action only
+					if exclamIdx := strings.Index(remaining, "!"); exclamIdx != -1 {
+						classMethod := remaining[:exclamIdx]
+						labels["log_action"] = remaining[exclamIdx+1:]
+
+						// Split struct_name.method_name
+						if dotIdx := strings.Index(classMethod, "."); dotIdx != -1 {
+							labels["log_class"] = classMethod[:dotIdx]
+							labels["log_method"] = classMethod[dotIdx+1:]
+						} else {
+							labels["log_method"] = classMethod
+						}
+					} else {
+						// Split struct_name.method_name
+						if dotIdx := strings.Index(remaining, "."); dotIdx != -1 {
+							labels["log_class"] = remaining[:dotIdx]
+							labels["log_method"] = remaining[dotIdx+1:]
+						} else {
+							labels["log_method"] = remaining
+						}
+					}
+				}
+			}
+		}
+	}
+
 	return logging.Entry{
 		Severity: func(level kklogger.Level) logging.Severity {
 			switch level {
@@ -126,13 +190,7 @@ func (h *KKLoggerGCPLoggingHook) getEntry(level kklogger.Level, msg string) logg
 
 			return logging.Default
 		}(level),
-		Payload: obj,
-		Labels: map[string]string{
-			"logName":     h.LogName,
-			"environment": h.Environment,
-			"codeVersion": h.CodeVersion,
-			"service":     h.Service,
-			"serverRoot":  h.ServerRoot,
-		},
+		Payload: &obj,
+		Labels:  labels,
 	}
 }
