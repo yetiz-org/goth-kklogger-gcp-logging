@@ -25,11 +25,16 @@ type KKLoggerGCPLoggingHook struct {
 }
 
 func (h *KKLoggerGCPLoggingHook) LogString(args ...interface{}) string {
-	if args == nil {
+	if args == nil || len(args) == 0 {
 		return ""
 	}
 
-	args = args[0].([]interface{})
+	if len(args) == 1 {
+		if slice, ok := args[0].([]interface{}); ok {
+			args = slice
+		}
+	}
+
 	argl := len(args)
 
 	if argl == 1 {
@@ -53,7 +58,7 @@ func (h *KKLoggerGCPLoggingHook) Trace(args ...interface{}) {
 		return
 	}
 
-	h.Send(kklogger.TraceLevel, h.LogString(args...))
+	h.Send(kklogger.TraceLevel, "", "", 0, h.LogString(args...))
 }
 
 func (h *KKLoggerGCPLoggingHook) Debug(args ...interface{}) {
@@ -61,7 +66,7 @@ func (h *KKLoggerGCPLoggingHook) Debug(args ...interface{}) {
 		return
 	}
 
-	h.Send(kklogger.DebugLevel, h.LogString(args...))
+	h.Send(kklogger.DebugLevel, "", "", 0, h.LogString(args...))
 }
 
 func (h *KKLoggerGCPLoggingHook) Info(args ...interface{}) {
@@ -69,7 +74,7 @@ func (h *KKLoggerGCPLoggingHook) Info(args ...interface{}) {
 		return
 	}
 
-	h.Send(kklogger.InfoLevel, h.LogString(args...))
+	h.Send(kklogger.InfoLevel, "", "", 0, h.LogString(args...))
 }
 
 func (h *KKLoggerGCPLoggingHook) Warn(args ...interface{}) {
@@ -77,7 +82,7 @@ func (h *KKLoggerGCPLoggingHook) Warn(args ...interface{}) {
 		return
 	}
 
-	h.Send(kklogger.WarnLevel, h.LogString(args...))
+	h.Send(kklogger.WarnLevel, "", "", 0, h.LogString(args...))
 }
 
 func (h *KKLoggerGCPLoggingHook) Error(args ...interface{}) {
@@ -85,10 +90,50 @@ func (h *KKLoggerGCPLoggingHook) Error(args ...interface{}) {
 		return
 	}
 
-	h.Send(kklogger.ErrorLevel, h.LogString(args...))
+	h.Send(kklogger.ErrorLevel, "", "", 0, h.LogString(args...))
 }
 
-func (h *KKLoggerGCPLoggingHook) Send(level kklogger.Level, msg string) {
+func (h *KKLoggerGCPLoggingHook) TraceWithCaller(funcName, file string, line int, args ...interface{}) {
+	if h.Level < kklogger.TraceLevel {
+		return
+	}
+
+	h.Send(kklogger.TraceLevel, funcName, file, line, h.LogString(args...))
+}
+
+func (h *KKLoggerGCPLoggingHook) DebugWithCaller(funcName, file string, line int, args ...interface{}) {
+	if h.Level < kklogger.DebugLevel {
+		return
+	}
+
+	h.Send(kklogger.DebugLevel, funcName, file, line, h.LogString(args...))
+}
+
+func (h *KKLoggerGCPLoggingHook) InfoWithCaller(funcName, file string, line int, args ...interface{}) {
+	if h.Level < kklogger.InfoLevel {
+		return
+	}
+
+	h.Send(kklogger.InfoLevel, funcName, file, line, h.LogString(args...))
+}
+
+func (h *KKLoggerGCPLoggingHook) WarnWithCaller(funcName, file string, line int, args ...interface{}) {
+	if h.Level < kklogger.WarnLevel {
+		return
+	}
+
+	h.Send(kklogger.WarnLevel, funcName, file, line, h.LogString(args...))
+}
+
+func (h *KKLoggerGCPLoggingHook) ErrorWithCaller(funcName, file string, line int, args ...interface{}) {
+	if h.Level < kklogger.ErrorLevel {
+		return
+	}
+
+	h.Send(kklogger.ErrorLevel, funcName, file, line, h.LogString(args...))
+}
+
+func (h *KKLoggerGCPLoggingHook) Send(level kklogger.Level, funcName, file string, line int, msg string) {
 	h.initOnce.Do(func() {
 		client, err := logging.NewClient(context.Background(), h.ProjectId)
 		if err != nil {
@@ -104,10 +149,10 @@ func (h *KKLoggerGCPLoggingHook) Send(level kklogger.Level, msg string) {
 		return
 	}
 
-	h.logger.Log(h.getEntry(level, msg))
+	h.logger.Log(h.getEntry(level, funcName, file, line, msg))
 }
 
-func (h *KKLoggerGCPLoggingHook) getEntry(level kklogger.Level, msg string) logging.Entry {
+func (h *KKLoggerGCPLoggingHook) getEntry(level kklogger.Level, funcName, file string, line int, msg string) logging.Entry {
 	obj := map[string]interface{}{}
 	_ = json.Unmarshal([]byte(msg), &obj)
 	labels := map[string]string{
@@ -116,6 +161,16 @@ func (h *KKLoggerGCPLoggingHook) getEntry(level kklogger.Level, msg string) logg
 		"codeVersion": h.CodeVersion,
 		"service":     h.Service,
 		"serverRoot":  h.ServerRoot,
+	}
+
+	if funcName != "" {
+		labels["caller_function"] = funcName
+	}
+	if file != "" {
+		labels["caller_file"] = file
+	}
+	if line > 0 {
+		labels["caller_line"] = fmt.Sprintf("%d", line)
 	}
 
 	if v, f := obj["type"]; f {

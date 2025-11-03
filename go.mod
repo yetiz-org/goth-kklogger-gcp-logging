@@ -6,7 +6,7 @@ toolchain go1.24.4
 
 require (
 	cloud.google.com/go/logging v1.13.1
-	github.com/yetiz-org/goth-kklogger v1.2.6
+	github.com/yetiz-org/goth-kklogger v1.2.8
 )
 
 require (
