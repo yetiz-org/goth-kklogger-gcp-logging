@@ -9,19 +9,21 @@ import (
 
 	"cloud.google.com/go/logging"
 	kklogger "github.com/yetiz-org/goth-kklogger"
+	"google.golang.org/api/option"
 )
 
 type KKLoggerGCPLoggingHook struct {
-	enabled     bool
-	initOnce    sync.Once
-	logger      *logging.Logger
-	ProjectId   string
-	LogName     string
-	Environment string
-	CodeVersion string
-	Service     string
-	ServerRoot  string
-	Level       kklogger.Level
+	enabled         bool
+	initOnce        sync.Once
+	logger          *logging.Logger
+	ProjectId       string
+	LogName         string
+	Environment     string
+	CodeVersion     string
+	Service         string
+	ServerRoot      string
+	Level           kklogger.Level
+	CredentialsJSON []byte
 }
 
 func (h *KKLoggerGCPLoggingHook) LogString(args ...interface{}) string {
@@ -135,7 +137,12 @@ func (h *KKLoggerGCPLoggingHook) ErrorWithCaller(funcName, file string, line int
 
 func (h *KKLoggerGCPLoggingHook) Send(level kklogger.Level, funcName, file string, line int, msg string) {
 	h.initOnce.Do(func() {
-		client, err := logging.NewClient(context.Background(), h.ProjectId)
+		var opts []option.ClientOption
+		if len(h.CredentialsJSON) > 0 {
+			opts = append(opts, option.WithCredentialsJSON(h.CredentialsJSON))
+		}
+
+		client, err := logging.NewClient(context.Background(), h.ProjectId, opts...)
 		if err != nil {
 			fmt.Println(err.Error())
 			return
